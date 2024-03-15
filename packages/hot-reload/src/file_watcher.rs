@@ -1,5 +1,6 @@
 use std::{
     io::Write,
+    net::TcpListener,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -10,7 +11,6 @@ use dioxus_rsx::{
     hot_reload::{FileMap, FileMapBuildResult, UpdateResult},
     HotReloadingContext,
 };
-use interprocess_docfix::local_socket::LocalSocketListener;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 #[cfg(feature = "file_watcher")]
@@ -163,7 +163,7 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
             }
         }
 
-        match LocalSocketListener::bind(hot_reload_socket_path) {
+        match TcpListener::bind("0.0.0.0:7878") {
             Ok(local_socket_stream) => {
                 let aborted = Arc::new(Mutex::new(false));
 
@@ -189,12 +189,12 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
                                 for template in templates {
                                     if !send_msg(
                                         HotReloadMsg::UpdateTemplate(template),
-                                        &mut connection,
+                                        &mut connection.0,
                                     ) {
                                         continue;
                                     }
                                 }
-                                channels.lock().unwrap().push(connection);
+                                channels.lock().unwrap().push(connection.0);
                                 if log {
                                     println!("Connected to hot reloading 🚀");
                                 }
