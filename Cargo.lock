@@ -2280,7 +2280,6 @@ dependencies = [
  "dioxus-rsx",
  "execute",
  "ignore",
- "interprocess",
  "notify",
  "once_cell",
  "serde",

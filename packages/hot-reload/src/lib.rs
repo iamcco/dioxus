@@ -1,12 +1,12 @@
 use std::{
     io::{BufRead, BufReader},
+    net::TcpStream,
     path::PathBuf,
 };
 
 use dioxus_core::Template;
 #[cfg(feature = "file_watcher")]
 pub use dioxus_html::HtmlCtx;
-use interprocess::local_socket::LocalSocketStream;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "custom_file_watcher")]
@@ -29,32 +29,13 @@ pub enum HotReloadMsg {
 }
 
 /// Connect to the hot reloading listener. The callback provided will be called every time a template change is detected
-pub fn connect(mut callback: impl FnMut(HotReloadMsg) + Send + 'static) {
+pub fn connect(mut callback: impl FnMut(HotReloadMsg) + Send + 'static, host: String, port: u16) {
     std::thread::spawn(move || {
-        // get the cargo manifest directory, where the target dir lives
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-        // walk the path until we a find a socket named `dioxusin` inside that folder's target directory
-        loop {
-            let maybe = path.join("target").join("dioxusin");
-
-            if maybe.exists() {
-                path = maybe;
-                break;
-            }
-
-            // It's likely we're running under just cargo and not dx
-            path = match path.parent() {
-                Some(parent) => parent.to_path_buf(),
-                None => return,
-            };
-        }
-
         // There might be a socket since the we're not running under the hot reloading server
-        let Ok(socket) = LocalSocketStream::connect(path.clone()) else {
+        let Ok(socket) = TcpStream::connect((host.as_str(), port)) else {
             println!(
                 "could not find hot reloading server at {:?}, make sure it's running",
-                path
+                (host, port)
             );
             return;
         };

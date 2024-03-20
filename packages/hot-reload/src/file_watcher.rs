@@ -1,5 +1,6 @@
 use std::{
     io::Write,
+    net::TcpListener,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -10,14 +11,13 @@ use dioxus_rsx::{
     hot_reload::{FileMap, FileMapBuildResult, UpdateResult},
     HotReloadingContext,
 };
-use interprocess::local_socket::LocalSocketListener;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 #[cfg(feature = "file_watcher")]
 use dioxus_html::HtmlCtx;
 
 pub struct Config<Ctx: HotReloadingContext> {
-    root_path: &'static str,
+    root_path: String,
     listening_paths: &'static [&'static str],
     excluded_paths: &'static [&'static str],
     log: bool,
@@ -28,7 +28,7 @@ pub struct Config<Ctx: HotReloadingContext> {
 impl<Ctx: HotReloadingContext> Default for Config<Ctx> {
     fn default() -> Self {
         Self {
-            root_path: "",
+            root_path: "".to_string(),
             listening_paths: &[""],
             excluded_paths: &["./target"],
             log: true,
@@ -40,9 +40,9 @@ impl<Ctx: HotReloadingContext> Default for Config<Ctx> {
 
 #[cfg(feature = "file_watcher")]
 impl Config<HtmlCtx> {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            root_path: "",
+            root_path: "".to_string(),
             listening_paths: &[""],
             excluded_paths: &["./target"],
             log: true,
@@ -54,7 +54,7 @@ impl Config<HtmlCtx> {
 
 impl<Ctx: HotReloadingContext> Config<Ctx> {
     /// Set the root path of the project (where the Cargo.toml file is). This is automatically set by the [`hot_reload_init`] macro.
-    pub fn root(self, path: &'static str) -> Self {
+    pub fn root(self, path: String) -> Self {
         Self {
             root_path: path,
             ..self
@@ -124,9 +124,11 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
         ..
     } = cfg;
 
-    let Ok(crate_dir) = PathBuf::from_str(root_path) else {
+    let Ok(crate_dir) = PathBuf::from_str(&root_path) else {
         return;
     };
+
+    println!("Starting hot reloading... {}", crate_dir.display());
 
     // try to find the gitignore file
     let gitignore_file_path = crate_dir.join(".gitignore");
@@ -161,19 +163,8 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
     let file_map = Arc::new(Mutex::new(file_map));
 
     let target_dir = crate_dir.join("target");
-    let hot_reload_socket_path = target_dir.join("dioxusin");
 
-    #[cfg(unix)]
-    {
-        // On unix, if you force quit the application, it can leave the file socket open
-        // This will cause the local socket listener to fail to open
-        // We check if the file socket is already open from an old session and then delete it
-        if hot_reload_socket_path.exists() {
-            let _ = std::fs::remove_file(hot_reload_socket_path.clone());
-        }
-    }
-
-    let local_socket_stream = match LocalSocketListener::bind(hot_reload_socket_path) {
+    let local_socket_stream = match TcpListener::bind("0.0.0.0:7878") {
         Ok(local_socket_stream) => local_socket_stream,
         Err(err) => {
             println!("failed to connect to hot reloading\n{err}");
@@ -184,7 +175,7 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
     let aborted = Arc::new(Mutex::new(false));
 
     // listen for connections
-    std::thread::spawn({
+    let cb = {
         let file_map = file_map.clone();
         let channels = channels.clone();
         let aborted = aborted.clone();
@@ -204,11 +195,11 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
                     };
 
                     for template in templates {
-                        if !send_msg(HotReloadMsg::UpdateTemplate(template), &mut connection) {
+                        if !send_msg(HotReloadMsg::UpdateTemplate(template), &mut connection.0) {
                             continue;
                         }
                     }
-                    channels.lock().unwrap().push(connection);
+                    channels.lock().unwrap().push(connection.0);
                     if log {
                         println!("Connected to hot reloading 🚀");
                     }
@@ -218,7 +209,7 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
                 }
             }
         }
-    });
+    };
 
     // watch for changes
     std::thread::spawn(move || {
@@ -374,6 +365,8 @@ pub fn init<Ctx: HotReloadingContext + Send + 'static>(cfg: Config<Ctx>) {
             last_update_time = chrono::Local::now().timestamp_millis();
         }
     });
+
+    cb();
 }
 
 fn send_msg(msg: HotReloadMsg, channel: &mut impl Write) -> bool {
