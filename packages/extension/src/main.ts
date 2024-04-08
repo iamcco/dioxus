@@ -1,9 +1,12 @@
-import * as vscode from 'vscode';
+import * as vscode from 'coc.nvim';
+import { resolve } from 'path';
+import { get_selected_range } from './utils';
+import { readFileSync } from 'fs';
 import init, * as dioxus from 'dioxus-ext';
 
 export async function activate(context: vscode.ExtensionContext) {
 	// Load the wasm from the file system
-	const wasmSourceCode = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(context.extensionUri, "./pkg/dioxus_ext_bg.wasm"));
+  const wasmSourceCode = readFileSync(resolve(context.extensionPath, "./pkg/dioxus_ext_bg.wasm"));
 
 	// Wait for the initialization to finish
 	// This is using the byte buffer directly which won't go through the "fetch" machinery
@@ -24,13 +27,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 }
 
-function translate(component: boolean) {
+async function translate(component: boolean) {
 	// Load the activate editor
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) return;
 
 	// Get the selected text
-	const html = editor.document.getText(editor.selection);
+	const html = editor.document.textDocument.getText(await get_selected_range());
 	if (html.length == 0) {
 		vscode.window.showWarningMessage("Please select HTML fragment before invoking this command!");
 		return;
@@ -39,7 +42,7 @@ function translate(component: boolean) {
 	// Translate the HTML to RSX
 	const out = dioxus.translate_rsx(html, component);
 	if (out.length > 0) {
-		editor.edit(editBuilder => editBuilder.replace(editor.selection, out));
+    editor.document.applyEdits([vscode.TextEdit.replace(await get_selected_range(), out) ]);
 	} else {
 		vscode.window.showWarningMessage(`Errors occurred while translating, make sure this block of HTML is valid`);
 	}
@@ -50,10 +53,10 @@ function formatRsxDocument() {
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) return;
 
-	fmtDocument(editor.document);
+	fmtDocument(editor.document.textDocument);
 }
 
-function fmtSelection() {
+async function fmtSelection() {
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) return;
 
@@ -61,17 +64,24 @@ function fmtSelection() {
 		return;
 	}
 
-	let end_line = editor.selection.end.line;
+  const selection = await get_selected_range();
+
+	let end_line = selection.end.line;
 
 	// Select full lines of selection
-	let selection_range = new vscode.Range(
-		editor.selection.start.line, 
-		0, 
-		end_line, 
-		editor.document.lineAt(end_line).range.end.character
+	let selection_range = vscode.Range.create(
+    {
+      line: selection.start.line, 
+      character: 0, 
+    },
+    {
+
+      line: end_line, 
+      character: editor.document.textDocument.lineAt(end_line).range.end.character
+    }
 	);
 
-	let unformatted = editor.document.getText(selection_range);
+	let unformatted = editor.document.textDocument.getText(selection_range);
 
 	if (unformatted.trim().length == 0) {
 		vscode.window.showWarningMessage("Please select rsx invoking this command!");
@@ -82,14 +92,18 @@ function fmtSelection() {
 	while ((unformatted.match(/{/g) || []).length > (unformatted.match(/}/g) || []).length && end_line < editor.document.lineCount - 1) {
 		end_line += 1;
 
-		selection_range = new vscode.Range(
-			editor.selection.start.line, 
-			0, 
-			end_line, 
-			editor.document.lineAt(end_line).range.end.character
+		selection_range = vscode.Range.create(
+      {
+        line: selection.start.line, 
+        character: 0, 
+      },
+      {
+        line: end_line, 
+        character: editor.document.textDocument.lineAt(end_line).range.end.character
+      }
 		);
 
-		unformatted = editor.document.getText(selection_range);
+		unformatted = editor.document.textDocument.getText(selection_range);
 	}
 
 	let tabSize: number;
@@ -99,19 +113,23 @@ function fmtSelection() {
 		tabSize = 4;
 	}
 
-	let end_above = Math.max(editor.selection.start.line - 1, 0);
+	const end_above = Math.max(selection.start.line - 1, 0);
 
-	let lines_above = editor.document.getText(
-		new vscode.Range(
-			0, 
-			0, 
-			end_above,
-			editor.document.lineAt(end_above).range.end.character
+	const lines_above = editor.document.textDocument.getText(
+		vscode.Range.create(
+      {
+        line: 0,
+        character: 0,
+      },
+      {
+        line: end_above,
+        character: editor.document.textDocument.lineAt(end_above).range.end.character
+      }
 		)
 	);
 
 	// Calculate indent for current selection
-	let base_indentation = (lines_above.match(/{/g) || []).length - (lines_above.match(/}/g) || []).length - 1;
+	const base_indentation = (lines_above.match(/{/g) || []).length - (lines_above.match(/}/g) || []).length - 1;
 
 	try {
 		let formatted = dioxus.format_selection(unformatted, !editor.options.insertSpaces, tabSize, base_indentation);
@@ -119,9 +137,9 @@ function fmtSelection() {
 			formatted = (editor.options.insertSpaces ? " ".repeat(tabSize) : "\t") + formatted;
 		}
 		if (formatted.length > 0) {
-			editor.edit(editBuilder => {
-				editBuilder.replace(selection_range, formatted);
-			});
+			editor.document.applyEdits([
+				vscode.TextEdit.replace(selection_range, formatted)
+      ]);
 		}
 	} catch (error) {
 		vscode.window.showErrorMessage(`Errors occurred while formatting. Make sure you have the most recent Dioxus-CLI installed and you have selected valid rsx with your cursor! \n${error}`);
@@ -147,10 +165,10 @@ function fmtDocument(document: vscode.TextDocument) {
 			return;
 		}
 
-		const [editor,] = vscode.window.visibleTextEditors.filter(editor => editor.document.fileName === document.fileName);
+		const [editor,] = vscode.window.visibleTextEditors.filter(editor => editor.document.uri === document.uri);
 		if (!editor) return; // Need an editor to apply text edits.
 
-		const contents = editor.document.getText();
+		const contents = editor.document.textDocument.getText();
 		let tabSize: number;
 		if (typeof editor.options.tabSize === 'number') {
 			tabSize = editor.options.tabSize;
@@ -162,10 +180,9 @@ function fmtDocument(document: vscode.TextDocument) {
 		// Replace the entire text document
 		// Yes, this is a bit heavy handed, but the dioxus side doesn't know the line/col scheme that vscode is using
 		if (formatted.length() > 0) {
-			editor.edit(editBuilder => {
-				const range = new vscode.Range(0, 0, document.lineCount, 0);
-				editBuilder.replace(range, formatted.formatted());
-			});
+			editor.document.applyEdits([
+        vscode.TextEdit.replace(vscode.Range.create({ character: 0, line: 0 }, { line: document.lineCount, character: 0}), formatted.formatted())
+      ]);
 		}
 	} catch (error) {
 		vscode.window.showWarningMessage(`Errors occurred while formatting. Make sure you have the most recent Dioxus-CLI installed! \n${error}`);

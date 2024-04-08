@@ -1,5 +1,5 @@
 {
-    "name": "dioxus",
+    "name": "coc-dioxus",
     "displayName": "Dioxus",
     "description": "Useful tools for working with Dioxus",
     "version": "0.5.0",
@@ -12,7 +12,7 @@
         "url": "https://github.com/DioxusLabs/dioxus"
     },
     "engines": {
-        "vscode": "^1.68.1"
+        "coc": "^0.0.80"
     },
     "categories": [
         "Programming Languages"
@@ -93,6 +93,7 @@
         "@types/vscode": "^1.68.1",
         "@typescript-eslint/eslint-plugin": "^5.30.5",
         "@typescript-eslint/parser": "^5.30.5",
+        "coc.nvim": "^0.0.83-next.9",
         "cross-env": "^7.0.3",
         "eslint": "^8.19.0",
         "eslint-config-prettier": "^8.5.0",
@@ -106,7 +107,7 @@
         "webpack-cli": "^5.1.4"
     },
     "dependencies": {
-        "dioxus-ext": "./pkg",
+        "dioxus-ext": "link:./pkg",
         "vsce": "^2.9.2"
     }
 }
