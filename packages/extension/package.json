@@ -2,9 +2,9 @@
     "name": "coc-dioxus",
     "displayName": "Dioxus",
     "description": "Useful tools for working with Dioxus",
-    "version": "0.5.0",
+    "version": "0.5.2",
     "publisher": "DioxusLabs",
-    "private": true,
+    "private": false,
     "license": "MIT",
     "icon": "static/icon.png",
     "repository": {
@@ -21,6 +21,13 @@
         "onLanguage:rust"
     ],
     "main": "./out/main.js",
+    "files": [
+        "out",
+        "pkg",
+        "package.json",
+        "README.md",
+        "LICENSE"
+    ],
     "extensionKind": [
         "ui",
         "workspace"
@@ -107,7 +114,6 @@
         "webpack-cli": "^5.1.4"
     },
     "dependencies": {
-        "dioxus-ext": "link:./pkg",
-        "vsce": "^2.9.2"
+        "dioxus-ext": "./pkg"
     }
 }
