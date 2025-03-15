@@ -4,18 +4,18 @@ use crate::{
 };
 use std::{
     num::NonZeroU64,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 pub(crate) struct RcStorageEntry<T> {
-    ref_count: AtomicU64,
+    ref_count: AtomicU32,
     pub data: T,
 }
 
 impl<T> RcStorageEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
-            ref_count: AtomicU64::new(0),
+            ref_count: AtomicU32::new(0),
             data,
         }
     }
